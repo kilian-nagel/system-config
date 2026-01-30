@@ -1,0 +1,22 @@
+[Unit]
+Description=Borg Backup Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=user
+Group=user
+
+# Path to the backup script
+ExecStart=/home/user/borgbackups/borg-backup.sh
+
+# Nice level (lower priority)
+Nice=19
+
+# IO scheduling class (best-effort, low priority)
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target
