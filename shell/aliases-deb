@@ -1,0 +1,14 @@
+alias cls="clear"
+
+# APT aliases
+alias apti="sudo apt install"
+alias aptu="sudo apt update"
+alias aptl="sudo apt list"
+
+# Docker aliases
+alias dcu="docker compose up"
+alias dcd="docker compose down"
+alias drmall="docker rm $(docker ps -aq)"
+alias dps="docker ps"    
+alias dce="docker exec"
+
