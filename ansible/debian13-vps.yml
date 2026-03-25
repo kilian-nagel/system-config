@@ -1,0 +1,140 @@
+---
+- name: Debian 13 VPS bootstrap
+  hosts: all
+  become: true
+  gather_facts: true
+
+  collections:
+    - community.general
+
+  vars:
+    target_user: "{{ ansible_user }}"
+    target_home: "{{ '/root' if target_user == 'root' else '/home/' + target_user }}"
+    docker_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+
+  handlers:
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - ufw
+        state: present
+        update_cache: true
+
+    - name: Ensure APT keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Docker official GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ docker_arch_map.get(ansible_architecture, 'amd64') }}
+          signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/debian
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Install Docker engine and plugins
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Ensure docker service is enabled and started
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Ensure docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+
+    - name: Add target user to docker group
+      ansible.builtin.user:
+        name: "{{ target_user }}"
+        groups: docker
+        append: true
+
+    - name: Copy aliases file to target user's home
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../shell/aliases-deb"
+        dest: "{{ target_home }}/.aliases-deb"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    - name: Ensure .bashrc exists
+      ansible.builtin.file:
+        path: "{{ target_home }}/.bashrc"
+        state: touch
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    - name: Source aliases from .bashrc
+      ansible.builtin.lineinfile:
+        path: "{{ target_home }}/.bashrc"
+        regexp: '^\[ -f ~/.aliases-deb \] && \\. ~/.aliases-deb$'
+        line: '[ -f ~/.aliases-deb ] && . ~/.aliases-deb'
+        state: present
+
+    - name: Allow SSH on port 22/tcp
+      community.general.ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Set UFW default deny for incoming
+      community.general.ufw:
+        direction: incoming
+        default: deny
+
+    - name: Set UFW default allow for outgoing
+      community.general.ufw:
+        direction: outgoing
+        default: allow
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Install custom sysctl configuration (ping enabled)
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-custom.conf
+        mode: '0644'
+        content: |
+          # Enable SYN Cookie protection
+          net.ipv4.tcp_syncookies = 1
+
+          # Keep ICMP (Ping) requests enabled
+          net.ipv4.icmp_echo_ignore_all = 0
+
+          # Protection from Spoofing
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.default.rp_filter = 1
+      notify: Reload sysctl

@@ -1,0 +1,3 @@
+[debian13]
+# Replace with your server IP/hostname and SSH user
+vps ansible_host=vps_io ansible_user=vps_user
